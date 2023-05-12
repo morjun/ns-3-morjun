@@ -160,16 +160,16 @@ main(int argc, char* argv[])
     }
 
     // get GW users
-    NodeContainer gwUsers = helper->GetGwUsers(); // GW: Gateway?
+    NodeContainer gwUsers = helper->GetGwUsers(); // GW: Gateway(Base station)?
 
     uint16_t port = 9;
 
-    QuicHelper quicStack;
-    quicStack.InstallQuic(gwUsers);
-    quicStack.InstallQuic(utUsers);
+    // QuicHelper quicStack; 
+    // quicStack.InstallQuic(gwUsers);
+    // quicStack.InstallQuic(utUsers);
 
     // create and install applications on GW user
-    PacketSinkHelper sinkHelper("ns3::QuicSocketFactory", // UDP -> QUIC
+    PacketSinkHelper sinkHelper("ns3::QuicSocketFactory", // UDP -> QUIC (SocketFactory Error!!)
                                 InetSocketAddress(helper->GetUserAddress(gwUsers.Get(0)), port));
     CbrHelper cbrHelper("ns3::QuicSocketFactory",
                         InetSocketAddress(helper->GetUserAddress(utUsers.Get(0)), port));
