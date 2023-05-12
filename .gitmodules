@@ -1,3 +1,12 @@
 [submodule "src/quic"]
 	path = src/quic
 	url = https://github.com/morjun/quic.git
+[submodule "contrib/magister-stats"]
+	path = contrib/magister-stats
+	url = https://github.com/sns3/stats.git
+[submodule "contrib/traffic"]
+	path = contrib/traffic
+	url = https://github.com/sns3/traffic.git
+[submodule "contrib/satellite"]
+	path = contrib/satellite
+	url = https://github.com/morjun/sns3-satellite.git 
