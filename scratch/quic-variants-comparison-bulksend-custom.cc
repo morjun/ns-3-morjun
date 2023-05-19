@@ -146,7 +146,9 @@ int main (int argc, char *argv[])
   bool pcap = false;
   std::string queue_disc_type = "ns3::PfifoFastQueueDisc";
 
-  // LogComponentEnable ("Config", LOG_LEVEL_ALL);
+  LogComponentEnable ("Config", LOG_LEVEL_ALL);
+  LogComponentEnable ("QuicHeader", LOG_LEVEL_ALL); //LOG_LEVEL_INFO
+
   CommandLine cmd;
   cmd.AddValue ("transport_prot", "Transport protocol to use: TcpNewReno, "
                 "TcpHybla, TcpHighSpeed, TcpHtcp, TcpVegas, TcpScalable, TcpVeno, "
