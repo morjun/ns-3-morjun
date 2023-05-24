@@ -60,6 +60,8 @@
 #include "ns3/ipv4-global-routing-helper.h"
 #include "ns3/traffic-control-module.h"
 
+#include "ns3/netanim-module.h"
+
 using namespace ns3;
 
 NS_LOG_COMPONENT_DEFINE ("QuicVariantsComparisonBulkSend");
@@ -147,7 +149,8 @@ int main (int argc, char *argv[])
   std::string queue_disc_type = "ns3::PfifoFastQueueDisc";
 
   LogComponentEnable ("Config", LOG_LEVEL_ALL);
-  LogComponentEnable ("QuicHeader", LOG_LEVEL_ALL); //LOG_LEVEL_INFO
+  // LogComponentEnable ("QuicHeader", LOG_LEVEL_ALL); //LOG_LEVEL_INFO
+  // LogComponentEnable ("QuicSocketBase", LOG_LEVEL_INFO); //LOG_LEVEL_INFO
 
   CommandLine cmd;
   cmd.AddValue ("transport_prot", "Transport protocol to use: TcpNewReno, "
@@ -224,6 +227,12 @@ int main (int argc, char *argv[])
   NodeContainer sinks;
   sinks.Create (num_flows);
 
+  AnimationInterface anim ("quic-bulksend-custom-animation.xml");
+
+  anim.SetConstantPosition(gateways.Get(0), 50.0, 0.0);
+  anim.SetConstantPosition(gateways.Get(1), 75.0, 0.0);
+  
+
   // Configure the error model
   // Here we use RateErrorModel with packet error rate
   Ptr<UniformRandomVariable> uv = CreateObject<UniformRandomVariable> ();
@@ -280,6 +289,9 @@ int main (int argc, char *argv[])
 
   for (int i = 0; i < num_flows; i++)
     {
+    anim.SetConstantPosition(sources.Get(i), 0.0, i*10);
+    anim.SetConstantPosition(sinks.Get(i), 100.0, i*10);
+
       NetDeviceContainer devices;
       devices = AccessLink.Install (sources.Get (i), gateways.Get (0)); //채널 생성, 네트워크 디바이스를 각 노드에 설치하고 컨테이너에 저장
       tchPfifo.Install (devices);
