@@ -58,3 +58,9 @@ serverQUIC-cwnd-change3.txt
 serverQUIC-rtt3.txt
 serverQUIC-rwnd-change3.txt
 serverQUIC-rx-data3.txt
+2
+loglog3.txt
+log.txt
+quic-animation.xml
+quic-bulksend-custom-animation.xml
+quic-tester-anim.xml

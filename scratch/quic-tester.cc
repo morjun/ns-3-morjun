@@ -31,6 +31,13 @@
 #include "ns3/config-store-module.h"
 #include <iostream>
 
+#include "ns3/netanim-module.h"
+
+#include "ns3/object.h"
+#include "ns3/uinteger.h"
+#include "ns3/traced-value.h"
+#include "ns3/trace-source-accessor.h"
+
 using namespace ns3;
 
 NS_LOG_COMPONENT_DEFINE("quic-tester");
@@ -51,8 +58,9 @@ main (int argc, char *argv[])
   LogComponentEnableAll (LOG_PREFIX_NODE);
   LogComponentEnable ("QuicEchoClientApplication", log_precision);
   LogComponentEnable ("QuicEchoServerApplication", log_precision);
-//  LogComponentEnable ("QuicHeader", log_precision);
-  //LogComponentEnable ("QuicSocketBase", log_precision);
+  // LogComponentEnable ("QuicClient", log_precision);
+//  LogComponentEnable ("QuicHeader", LOG_LEVEL_INFO);
+  LogComponentEnable ("QuicSocketBase", log_precision);
 //  LogComponentEnable ("QuicStreamBase", LOG_LEVEL_LOGIC);
 //  LogComponentEnable ("Socket", log_precision);
 //  LogComponentEnable ("Application", log_precision);
@@ -61,12 +69,13 @@ main (int argc, char *argv[])
 //  LogComponentEnable ("QuicSocketFactory", log_precision);
 //  LogComponentEnable ("ObjectFactory", log_precision);
 //  //LogComponentEnable ("TypeId", log_precision);
+  // LogComponentEnable ("UdpL4Protocol", log_precision);
 //  LogComponentEnable ("QuicL4Protocol", log_precision);
-//  LogComponentEnable ("QuicL5Protocol", log_precision);
+ LogComponentEnable ("QuicL5Protocol", log_precision);
 //  //LogComponentEnable ("ObjectBase", log_precision);
 //
 //  LogComponentEnable ("QuicEchoHelper", log_precision);
-    LogComponentEnable ("QuicSocketTxScheduler", log_precision);
+    // LogComponentEnable ("QuicSocketTxScheduler", log_precision);
 //  LogComponentEnable ("QuicSocketRxBuffer", log_precision);
 //  LogComponentEnable ("QuicHeader", log_precision);
 //  LogComponentEnable ("QuicSubheader", log_precision);
@@ -100,18 +109,31 @@ main (int argc, char *argv[])
   serverApps.Start (Seconds (1.0));
   serverApps.Stop (Seconds (1200.0));
 
-  QuicEchoClientHelper echoClient (interfaces.GetAddress (1), 9);
-  echoClient.SetAttribute ("MaxPackets", UintegerValue (1));
-  echoClient.SetAttribute ("Interval", TimeValue (Seconds (1.0)));
+  QuicEchoClientHelper echoClient (interfaces.GetAddress (1), 9); // 서버 주소, 서버 포트 번호
+  echoClient.SetAttribute ("MaxPackets", UintegerValue (5));
+  echoClient.SetAttribute ("Interval", TimeValue (Seconds (2.0)));
   //echoClient.SetAttribute ("MaxStreamData", UintegerValue (1024));
 
   ApplicationContainer clientApps = echoClient.Install (nodes.Get (0));
   echoClient.SetFill (clientApps.Get (0), "Hello World");
   clientApps.Start (Seconds (2.0));
-  clientApps.Stop (Seconds (5.0));
+  clientApps.Stop (Seconds (20.0));
 
   Packet::EnablePrinting ();
   Packet::EnableChecking ();
+
+  // AnimationInterface anim ("quic-tester-anim.xml");
+
+  // anim.SetConstantPosition(nodes.Get(0), 50.0, 0.0);
+  // anim.SetConstantPosition(nodes.Get(1), 75.0, 0.0);
+
+  // AsciiTraceHelper ascii;
+
+  // pointToPoint.EnableAsciiAll(ascii.CreateFileStream("quictest.tr"));
+  // pointToPoint.EnablePcapAll ("quictest");
+  // stack.EnablePcapIpv4All ("quictestIpv4");
+  // stack.EnableAsciiIpv4All ("quictestIpv4Patched");
+  stack.EnableAsciiIpv4All ("quictestIpv4PatchedV2");
 
   std::cout << "\n\n#################### STARTING RUN ####################\n\n";
   Simulator::Run ();
