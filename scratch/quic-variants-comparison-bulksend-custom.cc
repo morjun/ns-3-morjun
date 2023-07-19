@@ -132,7 +132,7 @@ Traces(uint32_t serverId, std::string pathVersion, std::string finalPart)
 int main (int argc, char *argv[])
 {
   std::string transport_prot = "QuicBbr";
-  double error_p = 0.03;
+  double error_p = 0.01;
   std::string bandwidth = "3Mbps";
   std::string delay = "40ms";
   std::string access_bandwidth = "1000Mbps";

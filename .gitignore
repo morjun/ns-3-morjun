@@ -50,6 +50,8 @@ cmake-build-release/
 
 # Ignore local cache used by e.g. clangd
 .cache/
+
+# User-defined
 clientQUIC-cwnd-change2.txt
 clientQUIC-rtt2.txt
 clientQUIC-rwnd-change2.txt
@@ -61,6 +63,7 @@ serverQUIC-rx-data3.txt
 2
 loglog3.txt
 log.txt
+*.txt
 quic-animation.xml
 quic-bulksend-custom-animation.xml
 quic-tester-anim.xml

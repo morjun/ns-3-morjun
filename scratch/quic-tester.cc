@@ -90,7 +90,7 @@ main (int argc, char *argv[])
 
   PointToPointHelper pointToPoint;
   pointToPoint.SetDeviceAttribute ("DataRate", StringValue ("5Mbps"));
-  pointToPoint.SetChannelAttribute ("Delay", StringValue ("2ms"));
+  pointToPoint.SetChannelAttribute ("Delay", StringValue ("100ms"));
 
   NetDeviceContainer devices;
   devices = pointToPoint.Install (nodes);
@@ -115,7 +115,7 @@ main (int argc, char *argv[])
   //echoClient.SetAttribute ("MaxStreamData", UintegerValue (1024));
 
   ApplicationContainer clientApps = echoClient.Install (nodes.Get (0));
-  echoClient.SetFill (clientApps.Get (0), "Hello World");
+  echoClient.SetFill (clientApps.Get (0), 1, 13);
   clientApps.Start (Seconds (2.0));
   clientApps.Stop (Seconds (20.0));
 
@@ -131,9 +131,9 @@ main (int argc, char *argv[])
 
   // pointToPoint.EnableAsciiAll(ascii.CreateFileStream("quictest.tr"));
   // pointToPoint.EnablePcapAll ("quictest");
-  // stack.EnablePcapIpv4All ("quictestIpv4");
-  // stack.EnableAsciiIpv4All ("quictestIpv4Patched");
-  stack.EnableAsciiIpv4All ("quictestIpv4PatchedV2");
+
+  stack.EnablePcapIpv4All ("quictestBulksend");
+  // stack.EnableAsciiIpv4All ("quictestIpv4PatchedV2");
 
   std::cout << "\n\n#################### STARTING RUN ####################\n\n";
   Simulator::Run ();
