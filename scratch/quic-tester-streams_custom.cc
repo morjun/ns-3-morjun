@@ -119,12 +119,12 @@ main (int argc, char *argv[])
   LogComponentEnableAll (LOG_PREFIX_NODE);
   LogComponentEnable ("QuicEchoClientApplication", log_precision);
   LogComponentEnable ("QuicEchoServerApplication", log_precision);
-  //LogComponentEnable ("QuicSocketBase", log_precision);
-  LogComponentEnable ("QuicStreamBase", log_precision);
-  LogComponentEnable("QuicStreamRxBuffer", log_precision);
-  LogComponentEnable("QuicStreamTxBuffer", log_precision);
-  LogComponentEnable("QuicSocketTxScheduler", log_precision);
-  LogComponentEnable("QuicSocketTxEdfScheduler", log_precision);
+  // LogComponentEnable ("QuicSocketBase", log_precision);
+  // LogComponentEnable ("QuicStreamBase", log_precision);
+  // LogComponentEnable("QuicStreamRxBuffer", log_precision);
+  // LogComponentEnable("QuicStreamTxBuffer", log_precision);
+  // LogComponentEnable("QuicSocketTxScheduler", log_precision);
+  // LogComponentEnable("QuicSocketTxEdfScheduler", log_precision);
   //LogComponentEnable ("Socket", log_precision);
   // LogComponentEnable ("Application", log_precision);
   // LogComponentEnable ("Node", log_precision);
@@ -133,16 +133,16 @@ main (int argc, char *argv[])
   //LogComponentEnable ("ObjectFactory", log_precision);
   //LogComponentEnable ("TypeId", log_precision);
   //LogComponentEnable ("QuicL4Protocol", log_precision);
-  LogComponentEnable ("QuicL5Protocol", log_precision);
+  // LogComponentEnable ("QuicL5Protocol", log_precision);
   //LogComponentEnable ("ObjectBase", log_precision);
 
   //LogComponentEnable ("QuicEchoHelper", log_precision);
   //LogComponentEnable ("UdpSocketImpl", log_precision);
-  //LogComponentEnable ("QuicHeader", log_precision);
+  LogComponentEnable ("QuicHeader", log_precision);
   //LogComponentEnable ("QuicSubheader", log_precision);
   //LogComponentEnable ("Header", log_precision);
   //LogComponentEnable ("PacketMetadata", log_precision);
-  LogComponentEnable ("QuicSocketTxBuffer", log_precision);
+  // LogComponentEnable ("QuicSocketTxBuffer", log_precision);
 
 
   NodeContainer nodes;
@@ -150,20 +150,57 @@ main (int argc, char *argv[])
   auto n1 = nodes.Get (0);
   auto n2 = nodes.Get (1);
 
-  PointToPointHelper pointToPoint;
-  pointToPoint.SetDeviceAttribute ("DataRate", StringValue ("8Mbps"));
-  pointToPoint.SetChannelAttribute ("Delay", StringValue ("20ms"));
+  NodeContainer satellites;
+  satellites.Create (2);
+  auto s1 = satellites.Get (0);
+  auto s2 = satellites.Get (1);
 
-  NetDeviceContainer devices;
-  devices = pointToPoint.Install (nodes);
+  NodeContainer clientSide;
+  clientSide.Add (n1);
+  clientSide.Add (s1);
+
+  NodeContainer serverSide;
+  serverSide.Add (n2);
+  serverSide.Add (s2);
+
+  double error_p = 0.01;
+
+  // Configure the error model
+  // Here we use RateErrorModel with packet error rate
+  Ptr<UniformRandomVariable> uv = CreateObject<UniformRandomVariable> ();
+  uv->SetStream (50);
+  RateErrorModel error_model;
+  error_model.SetRandomVariable (uv);
+  error_model.SetUnit (RateErrorModel::ERROR_UNIT_PACKET);
+  error_model.SetRate (error_p);
+
+  PointToPointHelper pointToPoint;
+  pointToPoint.SetDeviceAttribute ("DataRate", StringValue ("45Mbps"));
+  pointToPoint.SetChannelAttribute ("Delay", StringValue ("100ms"));
+  // Delay 100ms로 설정 시 DataRate 너무 낮으면 이상해짐
+
+  pointToPoint.SetDeviceAttribute ("ReceiveErrorModel",
+                                   PointerValue (&error_model));
+
+  NetDeviceContainer clientDevices;
+  clientDevices = pointToPoint.Install (clientSide);
+
+  NetDeviceContainer serverDevices;
+  serverDevices = pointToPoint.Install (serverSide);
+
+  NetDeviceContainer satellitesDevices;
+  satellitesDevices = pointToPoint.Install (satellites);
 
   QuicHelper stack;
   stack.InstallQuic (nodes);
+  stack.InstallQuic (satellites);
   
   Ipv4AddressHelper address;
   address.SetBase ("10.1.1.0", "255.255.255.0");
 
-  Ipv4InterfaceContainer interfaces = address.Assign (devices);
+  Ipv4InterfaceContainer interfaces = address.Assign (clientDevices);
+  Ipv4InterfaceContainer interfaces = address.Assign (serverDevices);
+  Ipv4InterfaceContainer interfaces = address.Assign (satellitesDevices);
 
   ApplicationContainer clientApps;
   ApplicationContainer serverApps;
@@ -177,11 +214,12 @@ main (int argc, char *argv[])
   QuicClientHelper dlClient (interfaces.GetAddress (1), dlPort);
   dlClient.SetAttribute ("Interval", TimeValue (MicroSeconds(interPacketInterval)));
   dlClient.SetAttribute ("PacketSize", UintegerValue(1000));
-  dlClient.SetAttribute ("MaxPackets", UintegerValue(10000000));
+  dlClient.SetAttribute ("MaxPackets", UintegerValue(1500));
   clientApps.Add (dlClient.Install (n1));
 
+  serverApps.Stop (Seconds (2000.0));
   serverApps.Start (Seconds (0.99));
-  clientApps.Stop (Seconds (5.0));
+  clientApps.Stop (Seconds (100.0));
   clientApps.Start (Seconds (1.0));
 
   Simulator::Schedule (Seconds (2.0000001), &Traces, n2->GetId(),
@@ -195,7 +233,7 @@ main (int argc, char *argv[])
   stack.EnablePcapIpv4All ("quictesterStream");
 
   std::cout << "\n\n#################### STARTING RUN ####################\n\n";
-  Simulator::Stop (Seconds (3000));
+  Simulator::Stop (Seconds (2000.0));
   Simulator::Run ();
   std::cout
       << "\n\n#################### RUN FINISHED ####################\n\n\n";

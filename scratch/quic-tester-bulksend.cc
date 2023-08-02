@@ -40,7 +40,7 @@
 
 using namespace ns3;
 
-NS_LOG_COMPONENT_DEFINE("quic-tester");
+NS_LOG_COMPONENT_DEFINE("quic-tester-bulksend");
 
 int
 main (int argc, char *argv[])
@@ -56,11 +56,12 @@ main (int argc, char *argv[])
   LogComponentEnableAll (LOG_PREFIX_TIME);
   LogComponentEnableAll (LOG_PREFIX_FUNC);
   LogComponentEnableAll (LOG_PREFIX_NODE);
-  LogComponentEnable ("QuicEchoClientApplication", log_precision);
-  LogComponentEnable ("QuicEchoServerApplication", log_precision);
+  // LogComponentEnable ("QuicEchoClientApplication", log_precision);
+  // LogComponentEnable ("QuicEchoServerApplication", log_precision);
   // LogComponentEnable ("QuicClient", log_precision);
 //  LogComponentEnable ("QuicHeader", LOG_LEVEL_INFO);
   LogComponentEnable ("QuicSocketBase", log_precision);
+  LogComponentEnable ("BulkSendApplication", log_precision);
 //  LogComponentEnable ("QuicStreamBase", LOG_LEVEL_LOGIC);
 //  LogComponentEnable ("Socket", log_precision);
 //  LogComponentEnable ("Application", log_precision);
@@ -116,21 +117,27 @@ main (int argc, char *argv[])
 
   Ipv4InterfaceContainer interfaces = address.Assign (devices);
 
-  QuicEchoServerHelper echoServer (9);
+  ApplicationContainer clientApps;
+  ApplicationContainer serverApps;
 
-  ApplicationContainer serverApps = echoServer.Install (nodes.Get (1));
+  BulkSendHelper ftp ("ns3::QuicSocketFactory", InetSocketAddress (interfaces.GetAddress (0)));
+
+  ftp.SetAttribute("Remote", AddressValue(InetSocketAddress (interfaces.GetAddress (1), 9)));
+  ftp.SetAttribute("SendSize", UintegerValue(1024));
+  ftp.SetAttribute("MaxBytes", UintegerValue(1000000));
+
+  PacketSinkHelper sinkHelper ("ns3::QuicSocketFactory", InetSocketAddress (interfaces.GetAddress (1), 9));
+  sinkHelper.SetAttribute("Protocol", TypeIdValue(QuicSocketFactory::GetTypeId()));
+
+  serverApps.Add (sinkHelper.Install (nodes.Get (1)));
+
   serverApps.Start (Seconds (1.0));
   serverApps.Stop (Seconds (1200.0));
 
-  QuicEchoClientHelper echoClient (interfaces.GetAddress (1), 9); // 서버 주소, 서버 포트 번호
-  echoClient.SetAttribute ("MaxPackets", UintegerValue (5));
-  echoClient.SetAttribute ("Interval", TimeValue (Seconds (2.0)));
-  //echoClient.SetAttribute ("MaxStreamData", UintegerValue (1024));
-
-  ApplicationContainer clientApps = echoClient.Install (nodes.Get (0));
-  echoClient.SetFill (clientApps.Get (0), 1, 100000); // MaxData is about 130000
+  clientApps.Add (ftp.Install (nodes.Get (0)));
+  
   clientApps.Start (Seconds (2.0));
-  clientApps.Stop (Seconds (20.0));
+  clientApps.Stop (Seconds (1200.0));
 
   Packet::EnablePrinting ();
   Packet::EnableChecking ();
@@ -145,7 +152,7 @@ main (int argc, char *argv[])
   // pointToPoint.EnableAsciiAll(ascii.CreateFileStream("quictest.tr"));
   // pointToPoint.EnablePcapAll ("quictest");
 
-  stack.EnablePcapIpv4All ("quictestBulksend");
+  stack.EnablePcapIpv4All ("quictestRealBulksend");
   // stack.EnableAsciiIpv4All ("quictestIpv4PatchedV2");
 
   std::cout << "\n\n#################### STARTING RUN ####################\n\n";

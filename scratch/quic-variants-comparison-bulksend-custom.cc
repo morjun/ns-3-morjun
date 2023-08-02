@@ -134,7 +134,7 @@ int main (int argc, char *argv[])
   std::string transport_prot = "QuicBbr";
   double error_p = 0.01;
   std::string bandwidth = "3Mbps";
-  std::string delay = "40ms";
+  std::string delay = "100ms";
   std::string access_bandwidth = "1000Mbps";
   std::string access_delay = "1ms";
   bool tracing = false;
@@ -145,7 +145,7 @@ int main (int argc, char *argv[])
   float duration = 100;
   uint32_t run = 0;
   bool flow_monitor = false;
-  bool pcap = false;
+  bool pcap = true;
   std::string queue_disc_type = "ns3::PfifoFastQueueDisc";
 
   LogComponentEnable ("Config", LOG_LEVEL_ALL);
@@ -350,6 +350,7 @@ int main (int argc, char *argv[])
 
       ftp.SetAttribute ("Remote", remoteAddress);
       ftp.SetAttribute ("SendSize", UintegerValue (1400));
+      ftp.SetAttribute ("MaxBytes", UintegerValue(int(data_mbytes*1000000)));
       clientApps.Add(ftp.Install (sources.Get (i)));
 
       PacketSinkHelper sinkHelper ("ns3::QuicSocketFactory", sinkLocalAddress);
