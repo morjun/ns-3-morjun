@@ -117,9 +117,9 @@ main (int argc, char *argv[])
   LogComponentEnableAll (LOG_PREFIX_TIME);
   LogComponentEnableAll (LOG_PREFIX_FUNC);
   LogComponentEnableAll (LOG_PREFIX_NODE);
-  LogComponentEnable ("QuicEchoClientApplication", log_precision);
-  LogComponentEnable ("QuicEchoServerApplication", log_precision);
-  // LogComponentEnable ("QuicSocketBase", log_precision);
+  // LogComponentEnable ("QuicEchoClientApplication", log_precision);
+  // LogComponentEnable ("QuicEchoServerApplication", log_precision);
+  LogComponentEnable ("QuicSocketBase", log_precision);
   // LogComponentEnable ("QuicStreamBase", log_precision);
   // LogComponentEnable("QuicStreamRxBuffer", log_precision);
   // LogComponentEnable("QuicStreamTxBuffer", log_precision);
@@ -138,7 +138,7 @@ main (int argc, char *argv[])
 
   //LogComponentEnable ("QuicEchoHelper", log_precision);
   //LogComponentEnable ("UdpSocketImpl", log_precision);
-  LogComponentEnable ("QuicHeader", log_precision);
+  // LogComponentEnable ("QuicHeader", log_precision);
   //LogComponentEnable ("QuicSubheader", log_precision);
   //LogComponentEnable ("Header", log_precision);
   //LogComponentEnable ("PacketMetadata", log_precision);
@@ -146,22 +146,23 @@ main (int argc, char *argv[])
 
 
   NodeContainer nodes;
-  nodes.Create (2);
+  nodes.Create (4);
   auto n1 = nodes.Get (0);
-  auto n2 = nodes.Get (1);
+  auto s1 = nodes.Get (1);
+  auto s2 = nodes.Get (2);
+  auto n2 = nodes.Get (3);
 
-  NodeContainer satellites;
-  satellites.Create (2);
-  auto s1 = satellites.Get (0);
-  auto s2 = satellites.Get (1);
+  NodeContainer n1s1;
+  n1s1.Add (n1);
+  n1s1.Add (s1);
 
-  NodeContainer clientSide;
-  clientSide.Add (n1);
-  clientSide.Add (s1);
+  NodeContainer s1s2;
+  s1s2.Add (s1);
+  s1s2.Add (s2);
 
-  NodeContainer serverSide;
-  serverSide.Add (n2);
-  serverSide.Add (s2);
+  NodeContainer s2n2;
+  s2n2.Add (s2);
+  s2n2.Add (n2);
 
   double error_p = 0.01;
 
@@ -182,25 +183,31 @@ main (int argc, char *argv[])
   pointToPoint.SetDeviceAttribute ("ReceiveErrorModel",
                                    PointerValue (&error_model));
 
-  NetDeviceContainer clientDevices;
-  clientDevices = pointToPoint.Install (clientSide);
-
-  NetDeviceContainer serverDevices;
-  serverDevices = pointToPoint.Install (serverSide);
-
-  NetDeviceContainer satellitesDevices;
-  satellitesDevices = pointToPoint.Install (satellites);
-
   QuicHelper stack;
   stack.InstallQuic (nodes);
-  stack.InstallQuic (satellites);
-  
-  Ipv4AddressHelper address;
-  address.SetBase ("10.1.1.0", "255.255.255.0");
 
-  Ipv4InterfaceContainer interfaces = address.Assign (clientDevices);
-  Ipv4InterfaceContainer interfaces = address.Assign (serverDevices);
-  Ipv4InterfaceContainer interfaces = address.Assign (satellitesDevices);
+  // Create the point-to-point link required by the topology
+
+  NetDeviceContainer n1s1Device;
+  n1s1Device = pointToPoint.Install (n1s1);
+
+  NetDeviceContainer s1s2Device;
+  s1s2Device = pointToPoint.Install (s1s2);
+
+  NetDeviceContainer s2n2Device;
+  s2n2Device = pointToPoint.Install (s2n2);
+
+  Ipv4AddressHelper address;
+
+  address.SetBase ("10.1.1.0", "255.255.255.0");
+  Ipv4InterfaceContainer n1s1Interfaces = address.Assign (n1s1Device);
+
+  address.SetBase ("10.1.2.0", "255.255.255.0");
+  address.Assign (s1s2Device);
+
+  address.SetBase ("10.1.3.0", "255.255.255.0");
+  Ipv4InterfaceContainer s2n2Interfaces = address.Assign (s2n2Device);
+
 
   ApplicationContainer clientApps;
   ApplicationContainer serverApps;
@@ -211,11 +218,13 @@ main (int argc, char *argv[])
   serverApps.Add (dlPacketSinkHelper.Install (n2));
 
   double interPacketInterval = 1000;
-  QuicClientHelper dlClient (interfaces.GetAddress (1), dlPort);
+  QuicClientHelper dlClient (s2n2Interfaces.GetAddress (1), dlPort);
   dlClient.SetAttribute ("Interval", TimeValue (MicroSeconds(interPacketInterval)));
-  dlClient.SetAttribute ("PacketSize", UintegerValue(1000));
-  dlClient.SetAttribute ("MaxPackets", UintegerValue(1500));
+  dlClient.SetAttribute ("PacketSize", UintegerValue(1039));
+  dlClient.SetAttribute ("MaxPackets", UintegerValue(1000));
   clientApps.Add (dlClient.Install (n1));
+
+  Ipv4GlobalRoutingHelper::PopulateRoutingTables ();
 
   serverApps.Stop (Seconds (2000.0));
   serverApps.Start (Seconds (0.99));
@@ -227,8 +236,11 @@ main (int argc, char *argv[])
   Simulator::Schedule (Seconds (2.0000001), &Traces, n1->GetId(),
         "./client", ".txt");
 
-  Packet::EnablePrinting ();
-  Packet::EnableChecking ();
+  // 비정상 패킷 많이 생김 (프린팅을 위한 패킷 메타데이터 저장으로 인한 충돌 문제로 추정)
+  // Packet::EnablePrinting ();
+
+  // stdout, stderr 출력을 파일로 저장하면 느려짐, 그냥 실행해도 소폭 느려짐 (원인모름)
+  // Packet::EnableChecking ();
 
   stack.EnablePcapIpv4All ("quictesterStream");
 
