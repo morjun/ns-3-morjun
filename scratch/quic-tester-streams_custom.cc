@@ -55,6 +55,25 @@ Rx (Ptr<OutputStreamWrapper> stream, Ptr<const Packet> p, const QuicHeader& q, P
 }
 
 static void
+receivedSpin (Ptr<OutputStreamWrapper> stream, Ptr<const Packet> p, const QuicHeader& q, Ptr<const QuicSocketBase> qsb)
+{
+  if (q.IsShort()) {
+    *stream->GetStream () << Simulator::Now ().GetSeconds () << "\t" << q.GetSpinBit() << std::endl;
+  }
+}
+
+/**
+ * Rx drop callback
+ *
+ * \param p The dropped packet.
+ */
+static void
+RxDrop(Ptr<const Packet> p)
+{
+    NS_LOG_UNCOND("RxDrop at " << Simulator::Now().GetSeconds());
+}
+
+static void
 Traces(uint32_t serverId, std::string pathVersion, std::string finalPart)
 {
   AsciiTraceHelper asciiTraceHelper;
@@ -80,9 +99,16 @@ Traces(uint32_t serverId, std::string pathVersion, std::string finalPart)
 
   std::ostringstream fileName;
   fileName << pathVersion << "QUIC-rx-data" << serverId << "" << finalPart;
+
+  std::ostringstream fileSpin;
+  fileSpin << pathVersion << "QUIC-spin" << serverId << "" << finalPart;
+
   std::ostringstream pathRx;
   pathRx << "/NodeList/" << serverId << "/$ns3::QuicL4Protocol/SocketList/*/QuicSocketBase/Rx";
   NS_LOG_INFO("Matches rx " << Config::LookupMatches(pathRx.str().c_str()).GetN());
+
+  std::ostringstream pathSpin;
+  pathSpin << "/NodeList/" << serverId << "/$ns3::QuicL4Protocol/SocketList/*/QuicSocketBase/SpinBit";
 
   Ptr<OutputStreamWrapper> stream = asciiTraceHelper.CreateFileStream (fileName.str ().c_str ());
   Config::ConnectWithoutContext (pathRx.str ().c_str (), MakeBoundCallback (&Rx, stream));
@@ -95,6 +121,9 @@ Traces(uint32_t serverId, std::string pathVersion, std::string finalPart)
 
   Ptr<OutputStreamWrapper> stream4 = asciiTraceHelper.CreateFileStream (fileRCWnd.str ().c_str ());
   Config::ConnectWithoutContextFailSafe (pathRCWnd.str ().c_str (), MakeBoundCallback(&CwndChange, stream4));
+
+  Ptr<OutputStreamWrapper> stream5 = asciiTraceHelper.CreateFileStream (fileSpin.str ().c_str ());
+  Config::ConnectWithoutContextFailSafe (pathSpin.str ().c_str (), MakeBoundCallback(&receivedSpin, stream5));
 }
 
 int
@@ -112,14 +141,14 @@ main (int argc, char *argv[])
   std::cout
       << "\n\n#################### SIMULATION SET-UP ####################\n\n\n";
 
-  LogLevel log_precision = LOG_LEVEL_INFO;
+  // LogLevel log_precision = LOG_LEVEL_INFO;
   Time::SetResolution (Time::NS);
   LogComponentEnableAll (LOG_PREFIX_TIME);
   LogComponentEnableAll (LOG_PREFIX_FUNC);
   LogComponentEnableAll (LOG_PREFIX_NODE);
   // LogComponentEnable ("QuicEchoClientApplication", log_precision);
   // LogComponentEnable ("QuicEchoServerApplication", log_precision);
-  LogComponentEnable ("QuicSocketBase", log_precision);
+  // LogComponentEnable ("QuicSocketBase", log_precision);
   // LogComponentEnable ("QuicStreamBase", log_precision);
   // LogComponentEnable("QuicStreamRxBuffer", log_precision);
   // LogComponentEnable("QuicStreamTxBuffer", log_precision);
@@ -164,24 +193,25 @@ main (int argc, char *argv[])
   s2n2.Add (s2);
   s2n2.Add (n2);
 
-  double error_p = 0.01;
+  double error_p = 0.09;
 
   // Configure the error model
   // Here we use RateErrorModel with packet error rate
   Ptr<UniformRandomVariable> uv = CreateObject<UniformRandomVariable> ();
   uv->SetStream (50);
+
   RateErrorModel error_model;
   error_model.SetRandomVariable (uv);
   error_model.SetUnit (RateErrorModel::ERROR_UNIT_PACKET);
   error_model.SetRate (error_p);
 
   PointToPointHelper pointToPoint;
-  pointToPoint.SetDeviceAttribute ("DataRate", StringValue ("45Mbps"));
-  pointToPoint.SetChannelAttribute ("Delay", StringValue ("100ms"));
+  pointToPoint.SetDeviceAttribute ("DataRate", StringValue ("17Mbps"));
+  pointToPoint.SetChannelAttribute ("Delay", StringValue ("33ms"));
   // Delay 100ms로 설정 시 DataRate 너무 낮으면 이상해짐
 
-  pointToPoint.SetDeviceAttribute ("ReceiveErrorModel",
-                                   PointerValue (&error_model));
+  // pointToPoint.SetDeviceAttribute ("ReceiveErrorModel",
+  //                                  PointerValue (&error_model));
 
   QuicHelper stack;
   stack.InstallQuic (nodes);
@@ -224,16 +254,29 @@ main (int argc, char *argv[])
   dlClient.SetAttribute ("MaxPackets", UintegerValue(1000));
   clientApps.Add (dlClient.Install (n1));
 
+  Ptr<RateErrorModel> em = CreateObject<RateErrorModel>();
+  em->SetAttribute("ErrorRate", DoubleValue(0.00001));
+
+  s2n2Device.Get(1)->SetAttribute("ReceiveErrorModel", PointerValue(&error_model));
+  // s2n2Device.Get(1)->SetAttribute("ReceiveErrorModel", PointerValue(em));
+
   Ipv4GlobalRoutingHelper::PopulateRoutingTables ();
+
+  n1s1Device.Get(0)->TraceConnectWithoutContext("PhyRxDrop", MakeCallback(&RxDrop));
+  n1s1Device.Get(1)->TraceConnectWithoutContext("PhyRxDrop", MakeCallback(&RxDrop));
+  s1s2Device.Get(0)->TraceConnectWithoutContext("PhyRxDrop", MakeCallback(&RxDrop));
+  s1s2Device.Get(1)->TraceConnectWithoutContext("PhyRxDrop", MakeCallback(&RxDrop));
+  s2n2Device.Get(0)->TraceConnectWithoutContext("PhyRxDrop", MakeCallback(&RxDrop));
+  s2n2Device.Get(1)->TraceConnectWithoutContext("PhyRxDrop", MakeCallback(&RxDrop));
 
   serverApps.Stop (Seconds (2000.0));
   serverApps.Start (Seconds (0.99));
   clientApps.Stop (Seconds (100.0));
   clientApps.Start (Seconds (1.0));
 
-  Simulator::Schedule (Seconds (2.0000001), &Traces, n2->GetId(),
+  Simulator::Schedule (Seconds (0.991), &Traces, n2->GetId(),
         "./server", ".txt");
-  Simulator::Schedule (Seconds (2.0000001), &Traces, n1->GetId(),
+  Simulator::Schedule (Seconds (1.001), &Traces, n1->GetId(),
         "./client", ".txt");
 
   // 비정상 패킷 많이 생김 (프린팅을 위한 패킷 메타데이터 저장으로 인한 충돌 문제로 추정)
@@ -242,7 +285,9 @@ main (int argc, char *argv[])
   // stdout, stderr 출력을 파일로 저장하면 느려짐, 그냥 실행해도 소폭 느려짐 (원인모름)
   // Packet::EnableChecking ();
 
-  stack.EnablePcapIpv4All ("quictesterStream");
+  // stack.EnablePcapIpv4All ("quictesterStream");
+  pointToPoint.EnablePcapAll ("quictesterStream");
+  pointToPoint.EnablePcap("quictesterStreamTest", NodeContainer(s1s2.Get (1)), true);
 
   std::cout << "\n\n#################### STARTING RUN ####################\n\n";
   Simulator::Stop (Seconds (2000.0));
