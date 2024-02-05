@@ -33,7 +33,7 @@
 
 using namespace ns3;
 
-NS_LOG_COMPONENT_DEFINE("QuicTesterStreams");
+NS_LOG_COMPONENT_DEFINE("QuicChangeOnSpin");
 
 // connect to a number of traces
 static void
@@ -148,7 +148,7 @@ main (int argc, char *argv[])
   LogComponentEnableAll (LOG_PREFIX_NODE);
   // LogComponentEnable ("QuicEchoClientApplication", log_precision);
   // LogComponentEnable ("QuicEchoServerApplication", log_precision);
-  LogComponentEnable ("QuicSocketBase", log_precision);
+  // LogComponentEnable ("QuicSocketBase", log_precision);
   // LogComponentEnable ("QuicStreamBase", log_precision);
   // LogComponentEnable("QuicStreamRxBuffer", log_precision);
   // LogComponentEnable("QuicStreamTxBuffer", log_precision);
@@ -175,11 +175,12 @@ main (int argc, char *argv[])
 
 
   NodeContainer nodes;
-  nodes.Create (4);
-  auto n1 = nodes.Get (0);
-  auto s1 = nodes.Get (1);
-  auto s2 = nodes.Get (2);
-  auto n2 = nodes.Get (3);
+  nodes.Create (5);
+  auto n1 = nodes.Get (0); // Client
+  auto s1 = nodes.Get (1); // First Router
+  auto s2 = nodes.Get (2); // link A (high delay, no loss)
+  auto s3 = nodes.Get (3); // link B (low delay, high loss)
+  auto n2 = nodes.Get (4); // Server
 
   NodeContainer n1s1;
   n1s1.Add (n1);
@@ -189,11 +190,19 @@ main (int argc, char *argv[])
   s1s2.Add (s1);
   s1s2.Add (s2);
 
+  NodeContainer s1s3;
+  s1s3.Add (s1);
+  s1s3.Add (s3);
+
   NodeContainer s2n2;
   s2n2.Add (s2);
   s2n2.Add (n2);
 
-  double error_p = 0.0045;
+  NodeContainer s3n2;
+  s3n2.Add (s3);
+  s3n2.Add (n2);
+
+  double error_p = 0.01;
 
   // Configure the error model
   // Here we use RateErrorModel with packet error rate
@@ -205,12 +214,20 @@ main (int argc, char *argv[])
   error_model.SetUnit (RateErrorModel::ERROR_UNIT_PACKET);
   error_model.SetRate (error_p);
 
-  PointToPointHelper pointToPoint;
-  pointToPoint.SetDeviceAttribute ("DataRate", StringValue ("17Mbps"));
-  pointToPoint.SetChannelAttribute ("Delay", StringValue ("33ms"));
+  PointToPointHelper lossLink;
+  lossLink.SetDeviceAttribute ("DataRate", StringValue ("17Mbps"));
+  lossLink.SetChannelAttribute ("Delay", StringValue ("33ms"));
+
+  PointToPointHelper delayLink;
+  delayLink.SetDeviceAttribute ("DataRate", StringValue ("17Mbps"));
+  delayLink.SetChannelAttribute ("Delay", StringValue ("100ms"));
+
+  PointToPointHelper goodLink;
+  goodLink.SetDeviceAttribute ("DataRate", StringValue ("17Mbps"));
+
   // Delay 100ms로 설정 시 DataRate 너무 낮으면 이상해짐
 
-  // pointToPoint.SetDeviceAttribute ("ReceiveErrorModel",
+  // lossLink.SetDeviceAttribute ("ReceiveErrorModel",
   //                                  PointerValue (&error_model));
 
   QuicHelper stack;
@@ -219,13 +236,19 @@ main (int argc, char *argv[])
   // Create the point-to-point link required by the topology
 
   NetDeviceContainer n1s1Device;
-  n1s1Device = pointToPoint.Install (n1s1);
+  n1s1Device = goodLink.Install (n1s1);
 
   NetDeviceContainer s1s2Device;
-  s1s2Device = pointToPoint.Install (s1s2);
+  s1s2Device = lossLink.Install (s1s2);
+
+  NetDeviceContainer s1s3Device;
+  s1s3Device = delayLink.Install (s1s2);
 
   NetDeviceContainer s2n2Device;
-  s2n2Device = pointToPoint.Install (s2n2);
+  s2n2Device = goodLink.Install (s2n2);
+
+  NetDeviceContainer s3n2Device;
+  s3n2Device = goodLink.Install (s2n2);
 
   Ipv4AddressHelper address;
 
@@ -236,7 +259,11 @@ main (int argc, char *argv[])
   address.Assign (s1s2Device);
 
   address.SetBase ("10.1.3.0", "255.255.255.0");
+  address.Assign (s1s3Device);
+
+  address.SetBase ("10.1.4.0", "255.255.255.0"); // IP 2개 주는 게 맞나? 아니면 라우터 하나를 더 배치해야 하나 (문서 참조)
   Ipv4InterfaceContainer s2n2Interfaces = address.Assign (s2n2Device);
+  Ipv4InterfaceContainer s3n2Interfaces = address.Assign (s3n2Device);
 
 
   ApplicationContainer clientApps;
@@ -257,7 +284,7 @@ main (int argc, char *argv[])
   Ptr<RateErrorModel> em = CreateObject<RateErrorModel>();
   em->SetAttribute("ErrorRate", DoubleValue(0.00001));
 
-  s2n2Device.Get(1)->SetAttribute("ReceiveErrorModel", PointerValue(&error_model));
+  s1s2Device.Get(1)->SetAttribute("ReceiveErrorModel", PointerValue(&error_model)); // s2쪽에서 패킷 드랍
   // s2n2Device.Get(1)->SetAttribute("ReceiveErrorModel", PointerValue(em));
 
   Ipv4GlobalRoutingHelper::PopulateRoutingTables ();
@@ -267,7 +294,7 @@ main (int argc, char *argv[])
   // s1s2Device.Get(0)->TraceConnectWithoutContext("PhyRxDrop", MakeCallback(&RxDrop));
   // s1s2Device.Get(1)->TraceConnectWithoutContext("PhyRxDrop", MakeCallback(&RxDrop));
   // s2n2Device.Get(0)->TraceConnectWithoutContext("PhyRxDrop", MakeCallback(&RxDrop));
-  s2n2Device.Get(1)->TraceConnectWithoutContext("PhyRxDrop", MakeCallback(&RxDrop));
+  s1s2Device.Get(1)->TraceConnectWithoutContext("PhyRxDrop", MakeCallback(&RxDrop));
 
   serverApps.Stop (Seconds (2000.0));
   serverApps.Start (Seconds (0.99));
@@ -286,8 +313,8 @@ main (int argc, char *argv[])
   // Packet::EnableChecking ();
 
   // stack.EnablePcapIpv4All ("quictesterStream");
-  pointToPoint.EnablePcapAll ("quictesterStream");
-  pointToPoint.EnablePcap("quictesterStreamTest", NodeContainer(s1s2.Get (1)), true);
+  lossLink.EnablePcapAll ("quicChangeOnSpin");
+  lossLink.EnablePcap("quicChangeOnSpinTest", NodeContainer(n1s1.Get (0)), true);
 
   std::cout << "\n\n#################### STARTING RUN ####################\n\n";
   Simulator::Stop (Seconds (2000.0));
