@@ -129,14 +129,19 @@ Traces(uint32_t serverId, std::string pathVersion, std::string finalPart)
 int
 main (int argc, char *argv[])
 {
-  CommandLine cmd;
-  cmd.Parse (argc, argv);
 
   Config::SetDefault ("ns3::QuicSocketBase::SocketSndBufSize", UintegerValue(40000000));
   Config::SetDefault ("ns3::QuicSocketBase::SocketRcvBufSize", UintegerValue(40000000));
   Config::SetDefault ("ns3::QuicStreamBase::StreamSndBufSize", UintegerValue(40000000));
   Config::SetDefault ("ns3::QuicStreamBase::StreamRcvBufSize", UintegerValue(40000000));
   Config::SetDefault ("ns3::QuicSocketBase::SchedulingPolicy", TypeIdValue(QuicSocketTxEdfScheduler::GetTypeId ()));
+  // The below value configures the default behavior of global routing.
+  // By default, it is disabled.  To respond to interface events, set to true
+  Config::SetDefault ("ns3::Ipv4GlobalRouting::RespondToInterfaceEvents", BooleanValue (true));
+  Config::SetDefault("ns3::Ipv4GlobalRouting::RandomEcmpRouting",     BooleanValue(true)); // enable multi-path routing
+
+  CommandLine cmd;
+  cmd.Parse (argc, argv);
   
   std::cout
       << "\n\n#################### SIMULATION SET-UP ####################\n\n\n";
@@ -155,7 +160,7 @@ main (int argc, char *argv[])
   // LogComponentEnable("QuicSocketTxScheduler", log_precision);
   // LogComponentEnable("QuicSocketTxEdfScheduler", log_precision);
   //LogComponentEnable ("Socket", log_precision);
-  // LogComponentEnable ("Application", log_precision);
+  LogComponentEnable ("Application", log_precision);
   // LogComponentEnable ("Node", log_precision);
   //LogComponentEnable ("InternetStackHelper", log_precision);
   //LogComponentEnable ("QuicSocketFactory", log_precision);
@@ -167,7 +172,7 @@ main (int argc, char *argv[])
 
   //LogComponentEnable ("QuicEchoHelper", log_precision);
   //LogComponentEnable ("UdpSocketImpl", log_precision);
-  LogComponentEnable ("QuicHeader", log_precision);
+  // LogComponentEnable ("QuicHeader", log_precision);
   //LogComponentEnable ("QuicSubheader", log_precision);
   //LogComponentEnable ("Header", log_precision);
   //LogComponentEnable ("PacketMetadata", log_precision);
@@ -175,12 +180,13 @@ main (int argc, char *argv[])
 
 
   NodeContainer nodes;
-  nodes.Create (5);
+  nodes.Create (6);
   auto n1 = nodes.Get (0); // Client
   auto s1 = nodes.Get (1); // First Router
   auto s2 = nodes.Get (2); // link A (high delay, no loss)
   auto s3 = nodes.Get (3); // link B (low delay, high loss)
-  auto n2 = nodes.Get (4); // Server
+  auto s4 = nodes.Get (4); // Second Router
+  auto n2 = nodes.Get (5); // Server
 
   NodeContainer n1s1;
   n1s1.Add (n1);
@@ -194,15 +200,19 @@ main (int argc, char *argv[])
   s1s3.Add (s1);
   s1s3.Add (s3);
 
-  NodeContainer s2n2;
-  s2n2.Add (s2);
-  s2n2.Add (n2);
+  NodeContainer s2s4;
+  s2s4.Add (s2);
+  s2s4.Add (s4);
 
-  NodeContainer s3n2;
-  s3n2.Add (s3);
-  s3n2.Add (n2);
+  NodeContainer s3s4;
+  s3s4.Add (s3);
+  s3s4.Add (s4);
 
-  double error_p = 0.01;
+  NodeContainer s4n2;
+  s4n2.Add (s4);
+  s4n2.Add (n2);
+
+  double error_p = 0.01; // 1%
 
   // Configure the error model
   // Here we use RateErrorModel with packet error rate
@@ -242,13 +252,16 @@ main (int argc, char *argv[])
   s1s2Device = lossLink.Install (s1s2);
 
   NetDeviceContainer s1s3Device;
-  s1s3Device = delayLink.Install (s1s2);
+  s1s3Device = delayLink.Install (s1s3);
 
-  NetDeviceContainer s2n2Device;
-  s2n2Device = goodLink.Install (s2n2);
+  NetDeviceContainer s2s4Device;
+  s2s4Device = goodLink.Install (s2s4);
 
-  NetDeviceContainer s3n2Device;
-  s3n2Device = goodLink.Install (s2n2);
+  NetDeviceContainer s3s4Device;
+  s3s4Device = goodLink.Install (s3s4);
+
+  NetDeviceContainer s4n2Device;
+  s4n2Device = goodLink.Install (s4n2);
 
   Ipv4AddressHelper address;
 
@@ -261,10 +274,14 @@ main (int argc, char *argv[])
   address.SetBase ("10.1.3.0", "255.255.255.0");
   address.Assign (s1s3Device);
 
-  address.SetBase ("10.1.4.0", "255.255.255.0"); // IP 2개 주는 게 맞나? 아니면 라우터 하나를 더 배치해야 하나 (문서 참조)
-  Ipv4InterfaceContainer s2n2Interfaces = address.Assign (s2n2Device);
-  Ipv4InterfaceContainer s3n2Interfaces = address.Assign (s3n2Device);
+  address.SetBase ("10.1.4.0", "255.255.255.0");
+  Ipv4InterfaceContainer s2s4Interfaces = address.Assign (s2s4Device);
 
+  address.SetBase ("10.1.5.0", "255.255.255.0");
+  Ipv4InterfaceContainer s3s4Interfaces = address.Assign (s3s4Device);
+
+  address.SetBase ("10.1.6.0", "255.255.255.0");
+  Ipv4InterfaceContainer s4n2Interfaces = address.Assign (s4n2Device);
 
   ApplicationContainer clientApps;
   ApplicationContainer serverApps;
@@ -275,10 +292,10 @@ main (int argc, char *argv[])
   serverApps.Add (dlPacketSinkHelper.Install (n2));
 
   double interPacketInterval = 1000;
-  QuicClientHelper dlClient (s2n2Interfaces.GetAddress (1), dlPort);
+  QuicClientHelper dlClient (s4n2Interfaces.GetAddress (1), dlPort);
   dlClient.SetAttribute ("Interval", TimeValue (MicroSeconds(interPacketInterval)));
   dlClient.SetAttribute ("PacketSize", UintegerValue(1039));
-  dlClient.SetAttribute ("MaxPackets", UintegerValue(1000));
+  dlClient.SetAttribute ("MaxPackets", UintegerValue(11000));
   clientApps.Add (dlClient.Install (n1));
 
   Ptr<RateErrorModel> em = CreateObject<RateErrorModel>();
@@ -301,6 +318,12 @@ main (int argc, char *argv[])
   clientApps.Stop (Seconds (100.0));
   clientApps.Start (Seconds (1.0));
 
+  Ptr<Ipv4> ipv4s1 = s1->GetObject<Ipv4> ();
+
+  Simulator::Schedule (Seconds (1.0), &Ipv4::SetDown, ipv4s1, 3); // delay link 비활성화, 0: loopback interface, 1: 들어오는거
+  Simulator::Schedule (Seconds (30), &Ipv4::SetUp, ipv4s1, 3); // delay link 활성화, 0: loopback interface, 1: 들어오는거
+  Simulator::Schedule (Seconds (30), &Ipv4::SetDown, ipv4s1, 2); // lossy link 비활성화, 0: loopback interface, 1: 들어오는거
+
   Simulator::Schedule (Seconds (0.991), &Traces, n2->GetId(),
         "./server", ".txt");
   Simulator::Schedule (Seconds (1.001), &Traces, n1->GetId(),
@@ -314,7 +337,7 @@ main (int argc, char *argv[])
 
   // stack.EnablePcapIpv4All ("quictesterStream");
   lossLink.EnablePcapAll ("quicChangeOnSpin");
-  lossLink.EnablePcap("quicChangeOnSpinTest", NodeContainer(n1s1.Get (0)), true);
+  lossLink.EnablePcap("quicChangeOnSpinTest", NodeContainer(s1), true);
 
   std::cout << "\n\n#################### STARTING RUN ####################\n\n";
   Simulator::Stop (Seconds (2000.0));
