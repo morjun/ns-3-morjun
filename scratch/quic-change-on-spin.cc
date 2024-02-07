@@ -29,9 +29,17 @@
 #include "ns3/point-to-point-module.h"
 #include "ns3/applications-module.h"
 #include "ns3/config-store-module.h"
+#include "ns3/flow-monitor-module.h"
+#include "ns3/flow-monitor-helper.h"
 #include <iostream>
 
 using namespace ns3;
+
+Ptr<PacketSink> sink;     //!< Pointer to the packet sink application
+std::vector<uint64_t> lastTotalRx; //!< The value of the last total received bytes
+std::ofstream   netStatsOut; // Create an output file stream (optional)
+FlowMonitorHelper flowHelper;
+Ptr<FlowMonitor> flowMonitor;
 
 NS_LOG_COMPONENT_DEFINE("QuicChangeOnSpin");
 
@@ -125,6 +133,70 @@ Traces(uint32_t serverId, std::string pathVersion, std::string finalPart)
   Ptr<OutputStreamWrapper> stream5 = asciiTraceHelper.CreateFileStream (fileSpin.str ().c_str ());
   Config::ConnectWithoutContextFailSafe (pathSpin.str ().c_str (), MakeBoundCallback(&receivedSpin, stream5));
 }
+
+void flowThroughput()
+{
+     Ptr<Ipv4FlowClassifier> classifier=DynamicCast<Ipv4FlowClassifier>(flowHelper.GetClassifier());
+
+     std::string proto;
+     std::map < FlowId, FlowMonitor::FlowStats > stats = flowMonitor->GetFlowStats();
+     netStatsOut << "  Time: " << Simulator::Now ().GetSeconds () << std::endl;
+     if (lastTotalRx.size() < stats.size())
+         lastTotalRx.resize(stats.size(), 0);
+     for (std::map < FlowId, FlowMonitor::FlowStats>::iterator flow=stats.begin(); flow!=stats.end(); flow++)
+         {
+          if (classifier->FindFlow(flow->first).sourceAddress == "10.1.6.2") continue;
+          Ipv4FlowClassifier::FiveTuple  t = classifier->FindFlow(flow->first);
+             switch(t.protocol)
+             {
+             case(6):
+                 proto = "TCP";
+                 break;
+             case(17):
+                 proto = "UDP";
+                 break;
+             default:
+                 exit(1);
+             }
+             netStatsOut << "FlowID: " << flow->first << " (" << proto << " "
+             << t.sourceAddress << " / " << t.sourcePort << " --> "
+             << t.destinationAddress << " / " << t.destinationPort << ")" << std::endl;
+
+                 //  printStats(flow->second);
+
+        netStatsOut << "  Tx Bytes: " << flow->second.txBytes << std::endl;
+        netStatsOut << "  Rx Bytes: " << flow->second.rxBytes << std::endl;
+        netStatsOut << "  Tx Packets: " << flow->second.txPackets << std::endl;
+        netStatsOut << "  Rx Packets: " << flow->second.rxPackets << std::endl;
+        netStatsOut << "  Lost Packets: " << flow->second.lostPackets << std::endl;
+        netStatsOut << "  Pkt Lost Ratio: " << ((double)flow->second.txPackets-(double)flow->second.rxPackets)/(double)flow->second.txPackets << std::endl;
+        
+
+        netStatsOut << "  Throughput: " << ((lastTotalRx[flow->first - 1] > 0 ? ( ((double)flow->second.rxBytes - lastTotalRx[flow->first - 1])*8/(1000000) ) : ((double)flow->second.rxBytes*8/(1000000))) / .5) << std::endl;
+        lastTotalRx[flow->first - 1] = flow->second.rxBytes;
+
+        netStatsOut << "  Mean{Throughput}: " << (flow->second.rxBytes*8/(1000000*Simulator::Now().GetSeconds())) << std::endl;
+        netStatsOut << "  Mean{Delay}: " << (flow->second.delaySum.GetSeconds()/flow->second.rxPackets) << std::endl;
+        netStatsOut << "  Mean{Jitter}: " << (flow->second.jitterSum.GetSeconds()/(flow->second.rxPackets)) << std::endl;
+
+
+         }
+  Simulator::Schedule (Seconds (.5), &flowThroughput); // Callback every 0.5s
+}
+
+/**
+ * Calulate the throughput
+ */
+// void
+// CalculateThroughput()
+// {
+//     Time now = Simulator::Now(); /* Return the simulator's virtual time. */
+//     double cur = (sink->GetTotalRx() - lastTotalRx) * (double)8 /
+//                  1e5; /* Convert Application RX Packets to MBits. */
+//     std::cout << now.GetSeconds() << "s: \t" << cur << " Mbit/s" << std::endl;
+//     lastTotalRx = sink->GetTotalRx();
+//     Simulator::Schedule(MilliSeconds(100), &CalculateThroughput);
+// }
 
 int
 main (int argc, char *argv[])
@@ -225,7 +297,7 @@ main (int argc, char *argv[])
   error_model.SetRate (error_p);
 
   PointToPointHelper lossLink;
-  lossLink.SetDeviceAttribute ("DataRate", StringValue ("17Mbps"));
+  lossLink.SetDeviceAttribute ("DataRate", StringValue ("1000Mbps"));
   lossLink.SetChannelAttribute ("Delay", StringValue ("33ms"));
 
   PointToPointHelper delayLink;
@@ -233,7 +305,7 @@ main (int argc, char *argv[])
   delayLink.SetChannelAttribute ("Delay", StringValue ("100ms"));
 
   PointToPointHelper goodLink;
-  goodLink.SetDeviceAttribute ("DataRate", StringValue ("17Mbps"));
+  goodLink.SetDeviceAttribute ("DataRate", StringValue ("1000Mbps"));
 
   // Delay 100ms로 설정 시 DataRate 너무 낮으면 이상해짐
 
@@ -288,14 +360,23 @@ main (int argc, char *argv[])
 
   // QUIC client and server
   uint32_t dlPort = 1025;
-  QuicServerHelper dlPacketSinkHelper (dlPort);
+
+  // QuicServerHelper dlPacketSinkHelper (dlPort);
+  PacketSinkHelper dlPacketSinkHelper ("ns3::QuicSocketFactory",
+                                      InetSocketAddress (s4n2Interfaces.GetAddress (1), dlPort));
+
   serverApps.Add (dlPacketSinkHelper.Install (n2));
 
-  double interPacketInterval = 1000;
-  QuicClientHelper dlClient (s4n2Interfaces.GetAddress (1), dlPort);
-  dlClient.SetAttribute ("Interval", TimeValue (MicroSeconds(interPacketInterval)));
-  dlClient.SetAttribute ("PacketSize", UintegerValue(1039));
-  dlClient.SetAttribute ("MaxPackets", UintegerValue(11000));
+  // sink = StaticCast<PacketSink> (serverApps.Get (0));
+
+  // QuicClientHelper dlClient (s4n2Interfaces.GetAddress (1), dlPort);
+  BulkSendHelper dlClient ("ns3::QuicSocketFactory",
+                           InetSocketAddress (s4n2Interfaces.GetAddress (1), dlPort));
+  // double interPacketInterval = 1;
+  dlClient.SetAttribute("MaxBytes", UintegerValue(10000000));
+  // dlClient.SetAttribute ("Interval", TimeValue (MicroSeconds(interPacketInterval)));
+  // dlClient.SetAttribute ("PacketSize", UintegerValue(1039));
+  // dlClient.SetAttribute ("MaxPackets", UintegerValue(11000));
   clientApps.Add (dlClient.Install (n1));
 
   Ptr<RateErrorModel> em = CreateObject<RateErrorModel>();
@@ -313,6 +394,9 @@ main (int argc, char *argv[])
   // s2n2Device.Get(0)->TraceConnectWithoutContext("PhyRxDrop", MakeCallback(&RxDrop));
   s1s2Device.Get(1)->TraceConnectWithoutContext("PhyRxDrop", MakeCallback(&RxDrop));
 
+  flowMonitor = flowHelper.InstallAll();
+  netStatsOut.open("netStatsMPLS.txt"); //Write Network measurements to output file
+
   serverApps.Stop (Seconds (2000.0));
   serverApps.Start (Seconds (0.99));
   clientApps.Stop (Seconds (100.0));
@@ -323,6 +407,8 @@ main (int argc, char *argv[])
   Simulator::Schedule (Seconds (1.0), &Ipv4::SetDown, ipv4s1, 3); // delay link 비활성화, 0: loopback interface, 1: 들어오는거
   Simulator::Schedule (Seconds (30), &Ipv4::SetUp, ipv4s1, 3); // delay link 활성화, 0: loopback interface, 1: 들어오는거
   Simulator::Schedule (Seconds (30), &Ipv4::SetDown, ipv4s1, 2); // lossy link 비활성화, 0: loopback interface, 1: 들어오는거
+  // Simulator::Schedule(Seconds(1.1), &CalculateThroughput);
+  Simulator::Schedule (Seconds (1.1), &flowThroughput); // Callback every 0.5s
 
   Simulator::Schedule (Seconds (0.991), &Traces, n2->GetId(),
         "./server", ".txt");
@@ -342,6 +428,9 @@ main (int argc, char *argv[])
   std::cout << "\n\n#################### STARTING RUN ####################\n\n";
   Simulator::Stop (Seconds (2000.0));
   Simulator::Run ();
+
+  flowMonitor->SerializeToXmlFile("quicChangeOnSpin.xml", true, true);
+
   std::cout
       << "\n\n#################### RUN FINISHED ####################\n\n\n";
   Simulator::Destroy ();
