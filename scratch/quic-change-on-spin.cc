@@ -232,7 +232,8 @@ main (int argc, char *argv[])
   // LogComponentEnable("QuicSocketTxScheduler", log_precision);
   // LogComponentEnable("QuicSocketTxEdfScheduler", log_precision);
   //LogComponentEnable ("Socket", log_precision);
-  LogComponentEnable ("Application", log_precision);
+  // LogComponentEnable ("Application", log_precision);
+  LogComponentEnable ("BulkSendApplication", log_precision);
   // LogComponentEnable ("Node", log_precision);
   //LogComponentEnable ("InternetStackHelper", log_precision);
   //LogComponentEnable ("QuicSocketFactory", log_precision);
@@ -297,7 +298,7 @@ main (int argc, char *argv[])
   error_model.SetRate (error_p);
 
   PointToPointHelper lossLink;
-  lossLink.SetDeviceAttribute ("DataRate", StringValue ("1000Mbps"));
+  lossLink.SetDeviceAttribute ("DataRate", StringValue ("17Mbps"));
   lossLink.SetChannelAttribute ("Delay", StringValue ("33ms"));
 
   PointToPointHelper delayLink;
@@ -305,7 +306,7 @@ main (int argc, char *argv[])
   delayLink.SetChannelAttribute ("Delay", StringValue ("100ms"));
 
   PointToPointHelper goodLink;
-  goodLink.SetDeviceAttribute ("DataRate", StringValue ("1000Mbps"));
+  goodLink.SetDeviceAttribute ("DataRate", StringValue ("17Mbps"));
 
   // Delay 100ms로 설정 시 DataRate 너무 낮으면 이상해짐
 
@@ -368,13 +369,16 @@ main (int argc, char *argv[])
   serverApps.Add (dlPacketSinkHelper.Install (n2));
 
   // sink = StaticCast<PacketSink> (serverApps.Get (0));
-
   // QuicClientHelper dlClient (s4n2Interfaces.GetAddress (1), dlPort);
   BulkSendHelper dlClient ("ns3::QuicSocketFactory",
                            InetSocketAddress (s4n2Interfaces.GetAddress (1), dlPort));
-  // double interPacketInterval = 1;
-  dlClient.SetAttribute("MaxBytes", UintegerValue(10000000));
+  // BulkSend 경우 path 하나 끊기면 전송 실패함 (delayLink 활성화 시간을 0.1초 빠르게 함으로써 해결됨)
+
+  // double interPacketInterval = 1000;
   // dlClient.SetAttribute ("Interval", TimeValue (MicroSeconds(interPacketInterval)));
+  // Interval 설정 안하면 이상해짐 근데 Interval 때문에 전송 속도가 느려짐 -> 어떻게 해야 하나?
+
+  dlClient.SetAttribute("MaxBytes", UintegerValue(10000000));
   // dlClient.SetAttribute ("PacketSize", UintegerValue(1039));
   // dlClient.SetAttribute ("MaxPackets", UintegerValue(11000));
   clientApps.Add (dlClient.Install (n1));
@@ -405,7 +409,7 @@ main (int argc, char *argv[])
   Ptr<Ipv4> ipv4s1 = s1->GetObject<Ipv4> ();
 
   Simulator::Schedule (Seconds (1.0), &Ipv4::SetDown, ipv4s1, 3); // delay link 비활성화, 0: loopback interface, 1: 들어오는거
-  Simulator::Schedule (Seconds (30), &Ipv4::SetUp, ipv4s1, 3); // delay link 활성화, 0: loopback interface, 1: 들어오는거
+  Simulator::Schedule (Seconds (29.9), &Ipv4::SetUp, ipv4s1, 3); // delay link 활성화, 0: loopback interface, 1: 들어오는거
   Simulator::Schedule (Seconds (30), &Ipv4::SetDown, ipv4s1, 2); // lossy link 비활성화, 0: loopback interface, 1: 들어오는거
   // Simulator::Schedule(Seconds(1.1), &CalculateThroughput);
   Simulator::Schedule (Seconds (1.1), &flowThroughput); // Callback every 0.5s
