@@ -60,7 +60,7 @@ main (int argc, char *argv[])
   // LogComponentEnable ("QuicEchoServerApplication", log_precision);
   // LogComponentEnable ("QuicClient", log_precision);
 //  LogComponentEnable ("QuicHeader", LOG_LEVEL_INFO);
-  LogComponentEnable ("QuicSocketBase", log_precision);
+  // LogComponentEnable ("QuicSocketBase", log_precision);
   LogComponentEnable ("BulkSendApplication", log_precision);
 //  LogComponentEnable ("QuicStreamBase", LOG_LEVEL_LOGIC);
 //  LogComponentEnable ("Socket", log_precision);
@@ -72,7 +72,7 @@ main (int argc, char *argv[])
 //  //LogComponentEnable ("TypeId", log_precision);
   // LogComponentEnable ("UdpL4Protocol", log_precision);
 //  LogComponentEnable ("QuicL4Protocol", log_precision);
- LogComponentEnable ("QuicL5Protocol", log_precision);
+//  LogComponentEnable ("QuicL5Protocol", log_precision);
 //  //LogComponentEnable ("ObjectBase", log_precision);
 //
 //  LogComponentEnable ("QuicEchoHelper", log_precision);

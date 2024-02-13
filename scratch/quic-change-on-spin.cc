@@ -225,13 +225,13 @@ main (int argc, char *argv[])
   LogComponentEnableAll (LOG_PREFIX_NODE);
   // LogComponentEnable ("QuicEchoClientApplication", log_precision);
   // LogComponentEnable ("QuicEchoServerApplication", log_precision);
-  // LogComponentEnable ("QuicSocketBase", log_precision);
-  // LogComponentEnable ("QuicStreamBase", log_precision);
+  LogComponentEnable ("QuicSocketBase", log_precision);
+  LogComponentEnable ("QuicStreamBase", log_precision);
   // LogComponentEnable("QuicStreamRxBuffer", log_precision);
-  // LogComponentEnable("QuicStreamTxBuffer", log_precision);
-  // LogComponentEnable("QuicSocketTxScheduler", log_precision);
+  LogComponentEnable("QuicStreamTxBuffer", log_precision);
+  LogComponentEnable("QuicSocketTxScheduler", log_precision);
   // LogComponentEnable("QuicSocketTxEdfScheduler", log_precision);
-  //LogComponentEnable ("Socket", log_precision);
+  // LogComponentEnable ("Socket", log_precision);
   // LogComponentEnable ("Application", log_precision);
   LogComponentEnable ("BulkSendApplication", log_precision);
   // LogComponentEnable ("Node", log_precision);
@@ -249,17 +249,15 @@ main (int argc, char *argv[])
   //LogComponentEnable ("QuicSubheader", log_precision);
   //LogComponentEnable ("Header", log_precision);
   //LogComponentEnable ("PacketMetadata", log_precision);
-  // LogComponentEnable ("QuicSocketTxBuffer", log_precision);
+  LogComponentEnable ("QuicSocketTxBuffer", log_precision);
 
 
   NodeContainer nodes;
-  nodes.Create (6);
+  nodes.Create (4);
   auto n1 = nodes.Get (0); // Client
   auto s1 = nodes.Get (1); // First Router
-  auto s2 = nodes.Get (2); // link A (high delay, no loss)
-  auto s3 = nodes.Get (3); // link B (low delay, high loss)
-  auto s4 = nodes.Get (4); // Second Router
-  auto n2 = nodes.Get (5); // Server
+  auto s2 = nodes.Get (2); // Second Router
+  auto n2 = nodes.Get (3); // Server
 
   NodeContainer n1s1;
   n1s1.Add (n1);
@@ -269,21 +267,9 @@ main (int argc, char *argv[])
   s1s2.Add (s1);
   s1s2.Add (s2);
 
-  NodeContainer s1s3;
-  s1s3.Add (s1);
-  s1s3.Add (s3);
-
-  NodeContainer s2s4;
-  s2s4.Add (s2);
-  s2s4.Add (s4);
-
-  NodeContainer s3s4;
-  s3s4.Add (s3);
-  s3s4.Add (s4);
-
-  NodeContainer s4n2;
-  s4n2.Add (s4);
-  s4n2.Add (n2);
+  NodeContainer s2n2;
+  s2n2.Add (s2);
+  s2n2.Add (n2);
 
   double error_p = 0.01; // 1%
 
@@ -296,6 +282,9 @@ main (int argc, char *argv[])
   error_model.SetRandomVariable (uv);
   error_model.SetUnit (RateErrorModel::ERROR_UNIT_PACKET);
   error_model.SetRate (error_p);
+  
+  // Ptr<RateErrorModel> em = CreateObject<RateErrorModel>();
+  // em->SetAttribute("ErrorRate", DoubleValue(0.00001));
 
   PointToPointHelper lossLink;
   lossLink.SetDeviceAttribute ("DataRate", StringValue ("17Mbps"));
@@ -321,20 +310,14 @@ main (int argc, char *argv[])
   NetDeviceContainer n1s1Device;
   n1s1Device = goodLink.Install (n1s1);
 
-  NetDeviceContainer s1s2Device;
-  s1s2Device = lossLink.Install (s1s2);
+  NetDeviceContainer s1s2LossDevice;
+  s1s2LossDevice = lossLink.Install (s1s2);
 
-  NetDeviceContainer s1s3Device;
-  s1s3Device = delayLink.Install (s1s3);
+  NetDeviceContainer s1s2DelayDevice;
+  s1s2DelayDevice = delayLink.Install (s1s2);
 
-  NetDeviceContainer s2s4Device;
-  s2s4Device = goodLink.Install (s2s4);
-
-  NetDeviceContainer s3s4Device;
-  s3s4Device = goodLink.Install (s3s4);
-
-  NetDeviceContainer s4n2Device;
-  s4n2Device = goodLink.Install (s4n2);
+  NetDeviceContainer s2n2Device;
+  s2n2Device = goodLink.Install (s2n2);
 
   Ipv4AddressHelper address;
 
@@ -342,19 +325,13 @@ main (int argc, char *argv[])
   Ipv4InterfaceContainer n1s1Interfaces = address.Assign (n1s1Device);
 
   address.SetBase ("10.1.2.0", "255.255.255.0");
-  address.Assign (s1s2Device);
+  address.Assign (s1s2LossDevice);
 
   address.SetBase ("10.1.3.0", "255.255.255.0");
-  address.Assign (s1s3Device);
+  address.Assign (s1s2DelayDevice);
 
   address.SetBase ("10.1.4.0", "255.255.255.0");
-  Ipv4InterfaceContainer s2s4Interfaces = address.Assign (s2s4Device);
-
-  address.SetBase ("10.1.5.0", "255.255.255.0");
-  Ipv4InterfaceContainer s3s4Interfaces = address.Assign (s3s4Device);
-
-  address.SetBase ("10.1.6.0", "255.255.255.0");
-  Ipv4InterfaceContainer s4n2Interfaces = address.Assign (s4n2Device);
+  Ipv4InterfaceContainer s2n2Interfaces = address.Assign (s2n2Device);
 
   ApplicationContainer clientApps;
   ApplicationContainer serverApps;
@@ -364,30 +341,27 @@ main (int argc, char *argv[])
 
   // QuicServerHelper dlPacketSinkHelper (dlPort);
   PacketSinkHelper dlPacketSinkHelper ("ns3::QuicSocketFactory",
-                                      InetSocketAddress (s4n2Interfaces.GetAddress (1), dlPort));
+                                      InetSocketAddress (s2n2Interfaces.GetAddress (1), dlPort));
 
   serverApps.Add (dlPacketSinkHelper.Install (n2));
 
   // sink = StaticCast<PacketSink> (serverApps.Get (0));
   // QuicClientHelper dlClient (s4n2Interfaces.GetAddress (1), dlPort);
   BulkSendHelper dlClient ("ns3::QuicSocketFactory",
-                           InetSocketAddress (s4n2Interfaces.GetAddress (1), dlPort));
+                           InetSocketAddress (s2n2Interfaces.GetAddress (1), dlPort));
   // BulkSend 경우 path 하나 끊기면 전송 실패함 (delayLink 활성화 시간을 0.1초 빠르게 함으로써 해결됨)
 
   // double interPacketInterval = 1000;
   // dlClient.SetAttribute ("Interval", TimeValue (MicroSeconds(interPacketInterval)));
   // Interval 설정 안하면 이상해짐 근데 Interval 때문에 전송 속도가 느려짐 -> 어떻게 해야 하나?
 
-  dlClient.SetAttribute("MaxBytes", UintegerValue(10000000));
+  dlClient.SetAttribute("MaxBytes", UintegerValue(10000));
   // dlClient.SetAttribute ("PacketSize", UintegerValue(1039));
   // dlClient.SetAttribute ("MaxPackets", UintegerValue(11000));
   clientApps.Add (dlClient.Install (n1));
 
-  Ptr<RateErrorModel> em = CreateObject<RateErrorModel>();
-  em->SetAttribute("ErrorRate", DoubleValue(0.00001));
-
-  s1s2Device.Get(1)->SetAttribute("ReceiveErrorModel", PointerValue(&error_model)); // s2쪽에서 패킷 드랍
-  // s2n2Device.Get(1)->SetAttribute("ReceiveErrorModel", PointerValue(em));
+  s1s2LossDevice.Get(1)->SetAttribute("ReceiveErrorModel", PointerValue(&error_model)); // s2쪽에서 패킷 드랍
+  // s1s2Device.Get(1)->SetAttribute("ReceiveErrorModel", PointerValue(em));
 
   Ipv4GlobalRoutingHelper::PopulateRoutingTables ();
 
@@ -396,7 +370,7 @@ main (int argc, char *argv[])
   // s1s2Device.Get(0)->TraceConnectWithoutContext("PhyRxDrop", MakeCallback(&RxDrop));
   // s1s2Device.Get(1)->TraceConnectWithoutContext("PhyRxDrop", MakeCallback(&RxDrop));
   // s2n2Device.Get(0)->TraceConnectWithoutContext("PhyRxDrop", MakeCallback(&RxDrop));
-  s1s2Device.Get(1)->TraceConnectWithoutContext("PhyRxDrop", MakeCallback(&RxDrop));
+  s1s2LossDevice.Get(1)->TraceConnectWithoutContext("PhyRxDrop", MakeCallback(&RxDrop));
 
   flowMonitor = flowHelper.InstallAll();
   netStatsOut.open("netStatsMPLS.txt"); //Write Network measurements to output file

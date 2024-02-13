@@ -67,3 +67,6 @@ log.txt
 quic-animation.xml
 quic-bulksend-custom-animation.xml
 quic-tester-anim.xml
+quicChangeOnSpin_delayLink.xml
+quicChangeOnSpin_lossyLink.xml
+quicChangeOnSpin.xml
