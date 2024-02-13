@@ -57,6 +57,7 @@
 #include "ns3/enum.h"
 #include "ns3/event-id.h"
 #include "ns3/flow-monitor-helper.h"
+#include "ns3/flow-monitor-module.h"
 #include "ns3/ipv4-global-routing-helper.h"
 #include "ns3/traffic-control-module.h"
 
@@ -65,6 +66,12 @@
 using namespace ns3;
 
 NS_LOG_COMPONENT_DEFINE ("QuicVariantsComparisonBulkSend");
+
+Ptr<PacketSink> sink;     //!< Pointer to the packet sink application
+std::vector<uint64_t> lastTotalRx; //!< The value of the last total received bytes
+std::ofstream   netStatsOut; // Create an output file stream (optional)
+FlowMonitorHelper flowHelper;
+Ptr<FlowMonitor> flowMonitor;
 
 // connect to a number of traces
 static void
@@ -129,22 +136,84 @@ Traces(uint32_t serverId, std::string pathVersion, std::string finalPart)
 }
 // 여기까지 Trace 관련 (공식 tutorial 및 manual 참조)
 
+void flowThroughput()
+{
+     Ptr<Ipv4FlowClassifier> classifier=DynamicCast<Ipv4FlowClassifier>(flowHelper.GetClassifier());
+
+     std::string proto;
+     std::map < FlowId, FlowMonitor::FlowStats > stats = flowMonitor->GetFlowStats();
+     netStatsOut << "  Time: " << Simulator::Now ().GetSeconds () << std::endl;
+     if (lastTotalRx.size() < stats.size())
+         lastTotalRx.resize(stats.size(), 0);
+     for (std::map < FlowId, FlowMonitor::FlowStats>::iterator flow=stats.begin(); flow!=stats.end(); flow++)
+         {
+          // if (classifier->FindFlow(flow->first).sourceAddress == "10.1.6.2") continue;
+          if(flow->first == 2) continue;
+          Ipv4FlowClassifier::FiveTuple  t = classifier->FindFlow(flow->first);
+             switch(t.protocol)
+             {
+             case(6):
+                 proto = "TCP";
+                 break;
+             case(17):
+                 proto = "UDP";
+                 break;
+             default:
+                 exit(1);
+             }
+             netStatsOut << "FlowID: " << flow->first << " (" << proto << " "
+             << t.sourceAddress << " / " << t.sourcePort << " --> "
+             << t.destinationAddress << " / " << t.destinationPort << ")" << std::endl;
+
+                 //  printStats(flow->second);
+
+        netStatsOut << "  Tx Bytes: " << flow->second.txBytes << std::endl;
+        netStatsOut << "  Rx Bytes: " << flow->second.rxBytes << std::endl;
+        netStatsOut << "  Tx Packets: " << flow->second.txPackets << std::endl;
+        netStatsOut << "  Rx Packets: " << flow->second.rxPackets << std::endl;
+        netStatsOut << "  Lost Packets: " << flow->second.lostPackets << std::endl;
+        netStatsOut << "  Pkt Lost Ratio: " << ((double)flow->second.txPackets-(double)flow->second.rxPackets)/(double)flow->second.txPackets << std::endl;
+        
+
+        netStatsOut << "  Throughput: " << ((lastTotalRx[flow->first - 1] > 0 ? ( ((double)flow->second.rxBytes - lastTotalRx[flow->first - 1])*8/(1000000) ) : ((double)flow->second.rxBytes*8/(1000000))) / .5) << std::endl;
+        lastTotalRx[flow->first - 1] = flow->second.rxBytes;
+
+        netStatsOut << "  Mean{Throughput}: " << (flow->second.rxBytes*8/(1000000*Simulator::Now().GetSeconds())) << std::endl;
+        netStatsOut << "  Mean{Delay}: " << (flow->second.delaySum.GetSeconds()/flow->second.rxPackets) << std::endl;
+        netStatsOut << "  Mean{Jitter}: " << (flow->second.jitterSum.GetSeconds()/(flow->second.rxPackets)) << std::endl;
+
+
+         }
+  Simulator::Schedule (Seconds (.1), &flowThroughput); // Callback every 0.1s(100ms)
+}
+
+/**
+ * Rx drop callback
+ *
+ * \param p The dropped packet.
+ */
+static void
+RxDrop(Ptr<const Packet> p)
+{
+    NS_LOG_UNCOND("RxDrop at " << Simulator::Now().GetSeconds());
+}
+
 int main (int argc, char *argv[])
 {
   std::string transport_prot = "QuicBbr";
   double error_p = 0.01;
-  std::string bandwidth = "3Mbps";
-  std::string delay = "100ms";
-  std::string access_bandwidth = "1000Mbps";
-  std::string access_delay = "1ms";
+  std::string bandwidth = "100Mbps";
+  std::string delay = "33ms";
+  std::string highDelay = "100ms";
+
   bool tracing = false;
-  std::string prefix_file_name = "QuicVariantsComparison";
-  double data_mbytes = 0;
+  std::string prefix_file_name = "quicBulksendChangeLink";
+  double data_mbytes = 40;
   uint32_t mtu_bytes = 1400;
   uint16_t num_flows = 1;
-  float duration = 100;
+  float duration = 20;
   uint32_t run = 0;
-  bool flow_monitor = false;
+  bool flowMonitorFlag = true;
   bool pcap = true;
   std::string queue_disc_type = "ns3::PfifoFastQueueDisc";
 
@@ -159,8 +228,8 @@ int main (int argc, char *argv[])
   cmd.AddValue ("error_p", "Packet error rate", error_p);
   cmd.AddValue ("bandwidth", "Bottleneck bandwidth", bandwidth);
   cmd.AddValue ("delay", "Bottleneck delay", delay);
-  cmd.AddValue ("access_bandwidth", "Access link bandwidth", access_bandwidth);
-  cmd.AddValue ("access_delay", "Access link delay", access_delay);
+  // cmd.AddValue ("access_bandwidth", "Access link bandwidth", access_bandwidth);
+  cmd.AddValue ("highDelay", "Access link delay", highDelay);
   cmd.AddValue ("tracing", "Flag to enable/disable tracing", tracing);
   cmd.AddValue ("prefix_name", "Prefix of output trace file", prefix_file_name);
   cmd.AddValue ("data", "Number of Megabytes of data to transmit", data_mbytes);
@@ -168,7 +237,7 @@ int main (int argc, char *argv[])
   cmd.AddValue ("num_flows", "Number of flows", num_flows);
   cmd.AddValue ("duration", "Time to allow flows to run in seconds", duration);
   cmd.AddValue ("run", "Run index (for setting repeatable seeds)", run);
-  cmd.AddValue ("flow_monitor", "Enable flow monitor", flow_monitor);
+  cmd.AddValue ("flowMonitorFlag", "Enable flow monitor", flowMonitorFlag);
   cmd.AddValue ("pcap_tracing", "Enable or disable PCAP tracing", pcap);
   cmd.AddValue ("queue_disc_type", "Queue disc type for gateway (e.g. ns3::CoDelQueueDisc)", queue_disc_type);
   cmd.Parse (argc, argv);
@@ -184,7 +253,7 @@ int main (int argc, char *argv[])
   LogComponentEnableAll (LOG_PREFIX_FUNC);
   LogComponentEnableAll (LOG_PREFIX_NODE);
   // LogComponentEnable("QuicVariantsComparison", LOG_LEVEL_ALL);
-  LogComponentEnable("BulkSendApplication", LOG_LEVEL_INFO);
+  // LogComponentEnable("BulkSendApplication", LOG_LEVEL_INFO);
   // LogComponentEnable("PfifoFastQueueDisc", LOG_LEVEL_ALL);
   // LogComponentEnable ("QuicSocketBase", LOG_LEVEL_ALL);
   // LogComponentEnable("TcpVegas", LOG_LEVEL_ALL);
@@ -201,6 +270,9 @@ int main (int argc, char *argv[])
   Config::SetDefault ("ns3::QuicSocketBase::SocketSndBufSize", UintegerValue (1 << 21));
   Config::SetDefault ("ns3::QuicStreamBase::StreamSndBufSize", UintegerValue (1 << 21));
   Config::SetDefault ("ns3::QuicStreamBase::StreamRcvBufSize", UintegerValue (1 << 21));
+
+  Config::SetDefault ("ns3::Ipv4GlobalRouting::RespondToInterfaceEvents", BooleanValue (true));
+  Config::SetDefault("ns3::Ipv4GlobalRouting::RandomEcmpRouting",     BooleanValue(true)); // enable multi-path routing
  
   // Select congestion control variant
   if (transport_prot.compare ("ns3::TcpWestwoodPlus") == 0)
@@ -222,15 +294,15 @@ int main (int argc, char *argv[])
   // sources(*num_flows) -> gateway -> gateway -> sinks(*num_flows)
   NodeContainer gateways;
   gateways.Create (2);
+
   NodeContainer sources;
   sources.Create (num_flows);
   NodeContainer sinks;
   sinks.Create (num_flows);
 
-  AnimationInterface anim ("quic-bulksend-custom-animation.xml");
-
-  anim.SetConstantPosition(gateways.Get(0), 50.0, 0.0);
-  anim.SetConstantPosition(gateways.Get(1), 75.0, 0.0);
+  // AnimationInterface anim ("quic-bulksend-custom-animation.xml");
+  // anim.SetConstantPosition(gateways.Get(0), 50.0, 0.0);
+  // anim.SetConstantPosition(gateways.Get(1), 75.0, 0.0);
   
 
   // Configure the error model
@@ -242,14 +314,18 @@ int main (int argc, char *argv[])
   error_model.SetUnit (RateErrorModel::ERROR_UNIT_PACKET);
   error_model.SetRate (error_p);
 
-  PointToPointHelper BottleneckLink; // gateway - gateway
-  BottleneckLink.SetDeviceAttribute ("DataRate", StringValue (bandwidth));
-  BottleneckLink.SetChannelAttribute ("Delay", StringValue (delay));
-  BottleneckLink.SetDeviceAttribute ("ReceiveErrorModel", PointerValue (&error_model));
+  PointToPointHelper lossLink; // gateway - gateway
+  lossLink.SetDeviceAttribute ("DataRate", StringValue (bandwidth));
+  lossLink.SetChannelAttribute ("Delay", StringValue (delay));
+  lossLink.SetDeviceAttribute ("ReceiveErrorModel", PointerValue (&error_model));
+
+  PointToPointHelper delayLink;
+  delayLink.SetDeviceAttribute ("DataRate", StringValue (bandwidth));
+  delayLink.SetChannelAttribute ("Delay", StringValue (highDelay));
   
-  PointToPointHelper AccessLink; // source - gateway
-  AccessLink.SetDeviceAttribute ("DataRate", StringValue (access_bandwidth));
-  AccessLink.SetChannelAttribute ("Delay", StringValue (access_delay));
+  PointToPointHelper goodLink; // source - gateway
+  goodLink.SetDeviceAttribute ("DataRate", StringValue (bandwidth));
+  // goodLink.SetChannelAttribute ("Delay", StringValue (highDelay));
 
   QuicHelper stack;
   stack.InstallQuic (sources);
@@ -268,19 +344,19 @@ int main (int argc, char *argv[])
 
   // Configure the sources and sinks net devices
   // and the channels between the sources/sinks and the gateways
+
   PointToPointHelper LocalLink; // gateway - sink
-  LocalLink.SetDeviceAttribute ("DataRate", StringValue (access_bandwidth));
-  LocalLink.SetChannelAttribute ("Delay", StringValue (access_delay));
+  LocalLink.SetDeviceAttribute ("DataRate", StringValue (bandwidth));
+  // LocalLink.SetChannelAttribute ("Delay", StringValue (highDelay));
 
   Ipv4InterfaceContainer sink_interfaces;
 
-  DataRate access_b (access_bandwidth);
   DataRate bottle_b (bandwidth);
-  Time access_d (access_delay);
+  Time high_d (highDelay);
   Time bottle_d (delay);
 
-  uint32_t size = (std::min (access_b, bottle_b).GetBitRate () / 8) *
-    ((access_d + bottle_d) * 2).GetSeconds (); // Why?
+  uint32_t size = (bottle_b.GetBitRate () / 8) *
+    ((high_d + bottle_d) * 2).GetSeconds (); // Why?
 
   Config::SetDefault ("ns3::PfifoFastQueueDisc::MaxSize",
                       QueueSizeValue (QueueSize (QueueSizeUnit::PACKETS, size / mtu_bytes)));
@@ -289,11 +365,11 @@ int main (int argc, char *argv[])
 
   for (int i = 0; i < num_flows; i++)
     {
-    anim.SetConstantPosition(sources.Get(i), 0.0, i*10);
-    anim.SetConstantPosition(sinks.Get(i), 100.0, i*10);
+    // anim.SetConstantPosition(sources.Get(i), 0.0, i*10);
+    // anim.SetConstantPosition(sinks.Get(i), 100.0, i*10);
 
       NetDeviceContainer devices;
-      devices = AccessLink.Install (sources.Get (i), gateways.Get (0)); //채널 생성, 네트워크 디바이스를 각 노드에 설치하고 컨테이너에 저장
+      devices = goodLink.Install (sources.Get (i), gateways.Get (0)); //채널 생성, 네트워크 디바이스를 각 노드에 설치하고 컨테이너에 저장
       tchPfifo.Install (devices);
       address.NewNetwork (); // source - gateway 네트워크
       Ipv4InterfaceContainer interfaces = address.Assign (devices);
@@ -315,21 +391,40 @@ int main (int argc, char *argv[])
       interfaces = address.Assign (devices); // gateway - sink 네트워크
       sink_interfaces.Add (interfaces.Get (1));
       
-      devices = BottleneckLink.Install (gateways.Get (0), gateways.Get (1));
+      NetDeviceContainer lossDevices = lossLink.Install (gateways.Get (0), gateways.Get (1));
       if (queue_disc_type.compare ("ns3::PfifoFastQueueDisc") == 0)
         {
-          tchPfifo.Install (devices);
+          tchPfifo.Install (lossDevices);
         }
       else if (queue_disc_type.compare ("ns3::CoDelQueueDisc") == 0)
         {
-          tchCoDel.Install (devices);
+          tchCoDel.Install (lossDevices);
         }
       else
         {
           NS_FATAL_ERROR ("Queue not recognized. Allowed values are ns3::CoDelQueueDisc or ns3::PfifoFastQueueDisc");
         }
+
       address.NewNetwork (); // gateway - gateway 네트워크
-      interfaces = address.Assign (devices);
+      interfaces = address.Assign (lossDevices);
+      lossDevices.Get(1)->TraceConnectWithoutContext("PhyRxDrop", MakeCallback(&RxDrop));
+
+      NetDeviceContainer delayDevices = delayLink.Install (gateways.Get (0), gateways.Get (1));
+      if (queue_disc_type.compare ("ns3::PfifoFastQueueDisc") == 0)
+        {
+          tchPfifo.Install (delayDevices);
+        }
+      else if (queue_disc_type.compare ("ns3::CoDelQueueDisc") == 0)
+        {
+          tchCoDel.Install (delayDevices);
+        }
+      else
+        {
+          NS_FATAL_ERROR ("Queue not recognized. Allowed values are ns3::CoDelQueueDisc or ns3::PfifoFastQueueDisc");
+        }
+
+      address.NewNetwork (); // gateway - gateway 네트워크
+      interfaces = address.Assign (delayDevices);
     }
 
   NS_LOG_INFO ("Initialize Global Routing.");
@@ -363,7 +458,7 @@ int main (int argc, char *argv[])
     }
 
   serverApps.Start (Seconds (0.99));
-  clientApps.Stop (Seconds (20.0));
+  clientApps.Stop (Seconds (10.0));
   clientApps.Start (Seconds (2));
 
   for (uint16_t i = 0; i < num_flows; i++)
@@ -379,23 +474,50 @@ int main (int argc, char *argv[])
 
   if (pcap) //pcap tracing
     {
-      BottleneckLink.EnablePcapAll (prefix_file_name, true);
+      lossLink.EnablePcapAll (prefix_file_name, true);
       LocalLink.EnablePcapAll (prefix_file_name, true);
-      AccessLink.EnablePcapAll (prefix_file_name, true);
+      goodLink.EnablePcapAll (prefix_file_name, true);
     }
 
   // Flow monitor
-  FlowMonitorHelper flowHelper;
-  if (flow_monitor)
+  if (flowMonitorFlag)
     {
-      flowHelper.InstallAll ();
+      flowMonitor = flowHelper.InstallAll ();
+      netStatsOut.open("netStatsMPLS.txt"); //Write Network measurements to output file
     }
+  
+  Ptr<Ipv4> ipv4s1 = gateways.Get(0)->GetObject<Ipv4> ();
+
+  Simulator::Schedule (Seconds (1.00), &Ipv4::SetUp, ipv4s1, 2); // lossy link 활성화, 0: loopback interface, 1: 들어오는거
+  Simulator::Schedule (Seconds (0.99), &Ipv4::SetDown, ipv4s1, 3); // delay link 비활성화, 0: loopback interface, 1: 들어오는거
+  Simulator::Schedule (Seconds (3.0), &Ipv4::SetUp, ipv4s1, 3); // delay link 활성화, 0: loopback interface, 1: 들어오는거
+  Simulator::Schedule (Seconds (3.01), &Ipv4::SetDown, ipv4s1, 2); // lossy link 비활성화, 0: loopback interface, 1: 들어오는거
+  Simulator::Schedule (Seconds (1.0), &flowThroughput); // Callback every 0.1s
 
   Simulator::Stop (Seconds (stop_time));
   Simulator::Run ();
 
-  if (flow_monitor)
+  if (flowMonitorFlag)
     {
+
+  flowMonitor->CheckForLostPackets ();
+  Ptr<Ipv4FlowClassifier> classifier = DynamicCast<Ipv4FlowClassifier> (flowHelper.GetClassifier ());
+  FlowMonitor::FlowStatsContainer stats = flowMonitor->GetFlowStats ();
+  for (std::map<FlowId, FlowMonitor::FlowStats>::const_iterator i = stats.begin (); i != stats.end (); ++i)
+    {
+      Ipv4FlowClassifier::FiveTuple t = classifier->FindFlow (i->first);
+      if (t.sourceAddress == "10.1.1.2")
+        {
+          continue;
+        }
+      std::cout << "Flow " << i->first  << " (" << t.sourceAddress << " -> " << t.destinationAddress << ")\n";
+      std::cout << "  Tx Packets: " << i->second.txPackets << "\n";
+      std::cout << "  Tx Bytes:   " << i->second.txBytes << "\n";
+      std::cout << "  TxOffered:  " << i->second.txBytes * 8.0 / 9.0 / 1000 / 1000  << " Mbps\n";
+      std::cout << "  Rx Packets: " << i->second.rxPackets << "\n";
+      std::cout << "  Rx Bytes:   " << i->second.rxBytes << "\n";
+      std::cout << "  Throughput: " << i->second.rxBytes * 8.0 / 9.0 / 1000 / 1000  << " Mbps\n";
+    }
       flowHelper.SerializeToXmlFile (prefix_file_name + ".flowmonitor", true, true);
     }
 

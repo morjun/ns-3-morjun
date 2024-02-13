@@ -225,11 +225,11 @@ main (int argc, char *argv[])
   LogComponentEnableAll (LOG_PREFIX_NODE);
   // LogComponentEnable ("QuicEchoClientApplication", log_precision);
   // LogComponentEnable ("QuicEchoServerApplication", log_precision);
-  LogComponentEnable ("QuicSocketBase", log_precision);
-  LogComponentEnable ("QuicStreamBase", log_precision);
+  // LogComponentEnable ("QuicSocketBase", log_precision);
+  // LogComponentEnable ("QuicStreamBase", log_precision);
   // LogComponentEnable("QuicStreamRxBuffer", log_precision);
-  LogComponentEnable("QuicStreamTxBuffer", log_precision);
-  LogComponentEnable("QuicSocketTxScheduler", log_precision);
+  // LogComponentEnable("QuicStreamTxBuffer", log_precision);
+  // LogComponentEnable("QuicSocketTxScheduler", log_precision);
   // LogComponentEnable("QuicSocketTxEdfScheduler", log_precision);
   // LogComponentEnable ("Socket", log_precision);
   // LogComponentEnable ("Application", log_precision);
@@ -249,7 +249,7 @@ main (int argc, char *argv[])
   //LogComponentEnable ("QuicSubheader", log_precision);
   //LogComponentEnable ("Header", log_precision);
   //LogComponentEnable ("PacketMetadata", log_precision);
-  LogComponentEnable ("QuicSocketTxBuffer", log_precision);
+  // LogComponentEnable ("QuicSocketTxBuffer", log_precision);
 
 
   NodeContainer nodes;
@@ -356,6 +356,7 @@ main (int argc, char *argv[])
   // Interval 설정 안하면 이상해짐 근데 Interval 때문에 전송 속도가 느려짐 -> 어떻게 해야 하나?
 
   dlClient.SetAttribute("MaxBytes", UintegerValue(10000));
+  dlClient.SetAttribute ("SendSize", UintegerValue (1400));
   // dlClient.SetAttribute ("PacketSize", UintegerValue(1039));
   // dlClient.SetAttribute ("MaxPackets", UintegerValue(11000));
   clientApps.Add (dlClient.Install (n1));

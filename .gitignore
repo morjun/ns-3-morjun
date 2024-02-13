@@ -70,3 +70,4 @@ quic-tester-anim.xml
 quicChangeOnSpin_delayLink.xml
 quicChangeOnSpin_lossyLink.xml
 quicChangeOnSpin.xml
+quicBulksendChangeLink.flowmonitor
